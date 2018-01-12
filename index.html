@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+
+<html>
+  
+  <head>
+    <title>Award REST API</title>
+    
+	<script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>  
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+
+  </head>
+
+  <style>	
+    body {
+      background: white;
+      font-family: Arial, sans-serif;
+    }
+      
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0 auto;
+    }
+      
+    tr:nth-child(odd) {
+      background: #c0d7f5;
+    }
+      
+    td {
+      padding: 15px;
+      border: solid 2px #a2a2a2;
+    }
+      
+    th {
+      padding: 20px;
+      border: solid 2px #a2a2a2;
+      font-weight: bold;
+      background: antiquewhite;
+    }
+
+    caption {
+      padding: 10px;
+      font-weight: bold;
+      color : orangered;
+    }
+      
+    signindata {
+      background:#ecf0f1;
+      border: #ccc 1px solid;
+      border-bottom: #ccc 2px solid;
+      padding: 8px;
+      width:250px;
+      color:#AAAAAA;
+      margin-top:10px;
+      font-size:1em;
+      border-radius:4px;
+    }
+      
+      button {
+        padding: 10px 18px;
+        text-align: center;
+        font-size: 16px;
+        margin: 4px 2px;
+          background-color: #a2a2a2;  
+    }
+      
+      input[type=text],select {
+    width: 20%;
+    padding: 12px 20px;
+    margin: 8px 0;
+    display: inline-block;
+    border: 4px solid #ccc;
+    border-radius: 2px;
+    box-sizing: border-box;
+      }
+      
+  </style>  
+
+  <body>
+  	<div id="content" class="content">
+		<h2>Award REST API</h2><hr/>
+
+		<div>
+			<div id="loginfields">
+				<input id="wdayUrl" type="text" class="signindata" name="wdayUrl" id="wdayUrl" placeholder="Workday URL"/><br/>
+				<input type="text" class="signindata" name="clientId" id="clientId" placeholder="API Client ID"/><br/><br/>
+				<button id="submitBtn" class="button button2" onclick="loginToWD();">Submit</button>
+			</div>
+			<div id="fetchfields">
+			<!--	Award ID: <input type="text" name="awardId" onchange="awardIDChanged()" id="awardId" size="10"/>
+				&nbsp;<span id="awardName"></span>
+                <button id="fetchAward" class="button button2" onclick="getAwardFromId();">Get Award from ID</button> -->
+				<br/>
+                Filter by Award Status: 
+				<select id="awardStatus">
+					<option value="--All--" selected="selected"></option>
+					<option value="91b0d382d50848e898733757caa9f84a">Approved</option>
+					<option value="dc76c9b6446c11de98360015c5e6daf6">Cancelled</option>
+					<option value="dc76c7cc446c11de98360015c5e6daf6">Denied</option>
+					<option value="dc76c4fc446c11de98360015c5e6daf6">Draft</option>
+					<option value="3d46fe27ed464f9aaaddcd510731c5f0">Approval In Process</option>
+				</select>&nbsp;&nbsp;&nbsp;&nbsp;
+                Filter by Effective Date: <input type="text" name="effectiveDate" id="effectiveDate" size="10" placeholder="YYYY-MM-DD"/>
+				&nbsp;&nbsp;&nbsp;&nbsp;
+				<button id="fetchAllAwards" class="button button2" onclick="getAllAwards();">Get Awards</button>
+			<br/>
+			</div>
+			<hr/>
+			<br/>
+			<p id="pageData" />
+			<div><button id="prev" class="button button2" onclick="prevPage();">Previous</button>&nbsp;
+				<button id="next" class="button button2" onclick="nextPage();">Next</button>
+			</div>
+			<p id="lineData" />
+			<div>
+				<button id="awardLine" class="button button2" onclick="getAwardLine();">Get Award Lines</button>
+			</div>
+
+		</div>
+	  </div>
+     
+  </body>
+
+  <script>
+
+    /* Workday Auth and API Calls */
+	onload();
+
+
+	function awardIDChanged()
+	{
+	    var awardId = document.getElementById("awardId");
+        var pageData = document.getElementById("pageData");
+		sessionStorage.setItem('curpage',0);
+		if (awardId) {
+            awardId.innerHTML = "";
+		}
+		if (pageData) {
+            pageData.innerHTML = "";
+		}
+		$("#prev").hide();
+		$("#next").hide();
+		$("#fetchfields").show();			
+	}
+	
+	function prevPage()
+	{
+    		var curPage = parseInt(sessionStorage.getItem('curpage')) - 1;
+   			sessionStorage.setItem('curpage',curPage);
+        	getAllAwards();
+	}
+	
+	function nextPage()
+	{
+    		var curPage = parseInt(sessionStorage.getItem('curpage')) + 1;
+   			sessionStorage.setItem('curpage',curPage);
+        	getAllAwards();
+	}
+
+    function getAwardLine()
+    {
+        var tds = document.querySelectorAll('table[name=singleAwardTable] td');
+        var awardId = $("#awardId").val() || (tds && tds[0].innerText);
+        var href = sessionStorage.getItem('wdayUrl') + "/ccx/internalapi/finGrants/v1/super/awards/" +
+            awardId +"/lines";
+        var accessToken = sessionStorage.getItem('accessToken');
+        $.ajax(
+            {
+                'type': 'GET',
+                'url': href,
+                'dataType':'json',
+                headers: {
+                    'Authorization': 'Bearer ' + accessToken,
+                    'X-Tenant' : 'super',
+                    'Content-Type' : 'text/xml; charset=UTF-8' },
+                complete: function(xhr,data)
+                {
+                    buildTableForAwardLines(xhr);
+                }
+            });
+
+    }
+	
+	function onload()
+	{
+		var hashval = location.hash;
+		var userMsg = '';
+		var match = hashval.match(/[?&#]access_token=([^&]*)?/);
+		$("#prev").hide();
+		$("#next").hide();
+        $("#awardLine").hide();
+
+		if(match)
+		{
+			var accessToken = match[1];
+			sessionStorage.setItem( 'accessToken', accessToken );
+			userMsg = 'Logged in To Workday...';
+			$("#loginfields").hide();
+			$("#fetchfields").show();
+            //$("#lineData").hide();
+		}
+		else
+		{
+			userMsg = 'Not Logged in To Workday...';
+			$("#loginfields").show();
+			$("#fetchfields").hide();
+		}
+		sessionStorage.setItem('curpage',0);
+		sessionStorage.setItem('pagesize',10);
+
+		document.getElementById("pageData").innerHTML = userMsg;
+        return 0;
+	}
+	
+	function loginToWD()
+	{
+		if($("#wdayUrl").val() == '' || $("#clientId").val() == '')
+		{
+			document.getElementById("pageData").innerHTML = "Workday URL and API Client ID are required";
+		}
+		else
+		{
+			var wdayUrl = "https://" + $("#wdayUrl").val()
+			sessionStorage.setItem('wdayUrl',wdayUrl);
+			var authurl = wdayUrl + "/super/authorize?response_type=token&client_id=" + $("#clientId").val();
+			window.location.href = authurl;
+		}
+	}
+	
+	function showCustomerName(accessToken)
+	{
+		// assumes custid is not empty
+		// calls customer activity service to fetch customer name & wid
+		// and displays it next to customer id
+		var href = sessionStorage.getItem('wdayUrl') + "/ccx/api/v1/super/customers/Customer_ID=" + $("#custid").val()
+		$.ajax(
+		{
+			'type': 'GET',
+		    'url': href,
+			'dataType':'json',
+		    headers: { 
+			'Authorization': 'Bearer ' + accessToken,
+			'X-Tenant' : 'super', 
+			'Content-Type' : 'text/xml; charset=UTF-8' },
+		    complete: function(xhr,data)
+			{
+				if(xhr.status == 200)
+				{
+					var jdata = jQuery.parseJSON(xhr.responseText);
+					document.getElementById("custName").innerHTML = " (" + jdata.name + ")";
+				}
+				else
+				{
+					document.getElementById("custName").innerHTML = "";
+				}
+			}
+		});
+	}
+
+    function getAwardFromId(){
+        if($("#awardId").val() != '')
+        {
+            var href = sessionStorage.getItem('wdayUrl') + "/ccx/internalapi/finGrants/v1/super/awards/" +
+				$("#awardId").val();
+            var accessToken = sessionStorage.getItem('accessToken');
+            $.ajax(
+                {
+                    'type': 'GET',
+                    'url': href,
+                    'dataType':'json',
+                    headers: {
+                        'Authorization': 'Bearer ' + accessToken,
+                        'X-Tenant' : 'super',
+                        'Content-Type' : 'text/xml; charset=UTF-8' },
+                    complete: function(xhr,data)
+                    {
+                        buildTableForSingleAward(xhr);
+                    }
+                });
+
+        }
+        else
+        {
+            //document.getElementById("custName").innerHTML = "";
+            document.getElementById("pageData").innerHTML = "Award Reference ID or WID is required";
+        }
+        return false;
+	}
+
+    function onAwardClick(awardId){
+        if(awardId && awardId.id)
+        {
+            var href = sessionStorage.getItem('wdayUrl') + "/ccx/internalapi/finGrants/v1/super/awards/" +
+                awardId.id;
+            var accessToken = sessionStorage.getItem('accessToken');
+            $.ajax(
+                {
+                    'type': 'GET',
+                    'url': href,
+                    'dataType':'json',
+                    headers: {
+                        'Authorization': 'Bearer ' + accessToken,
+                        'X-Tenant' : 'super',
+                        'Content-Type' : 'text/xml; charset=UTF-8' },
+                    complete: function(xhr,data)
+                    {
+                        buildTableForSingleAward(xhr);
+                    }
+                });
+
+        }
+        else
+        {
+            //document.getElementById("custName").innerHTML = "";
+            document.getElementById("pageData").innerHTML = "Award Reference ID or WID is required";
+        }
+        return false;
+    }
+
+    function buildTableForSingleAward(resObject)
+    {
+        document.getElementById("lineData").innerHTML = "";
+        if(resObject.status != 200)
+        {
+            document.getElementById("pageData").innerHTML = "Error Fetching Awards:<br/>Status: " + resObject.status + " (" + resObject.statusText + ")<br/>" + resObject.responseText;
+        }
+        else
+        {
+            var jdata = jQuery.parseJSON(resObject.responseText);
+            console.log(jdata);
+            var lifecycleDescriptor, specialDescriptor, specialComment,scheduleStartDate,scheduleEndDate,contractStartDate,contractEndDate,awardStatus,name;
+            var tableHTML = "<table name=\"singleAwardTable\" border=\"1\"><tr>" +
+                "<th>ID</th><th>Name</th><th>Start Date</th><th>End Date</th>" +
+                "<th>Contract Start Date</th><th>Contract End Date</th><th>LifeCycle Status</th><th>Award Status</th><th>Special Condition Type</th><th>Special Condition Comment</th></tr>";
+
+                lifecycleDescriptor = "";
+                specialComment = "";
+                specialDescriptor = "";
+                scheduleStartDate = "";
+                scheduleEndDate = "";
+                contractStartDate =  "";
+                contractEndDate =  "";
+                awardStatus =  "";
+                name = "";
+            
+                
+                if (jdata.lifecycleStatus.descriptor) {
+                    lifecycleDescriptor = jdata.lifecycleStatus.descriptor;
+                }
+                
+                if (jdata.specialConditions && jdata.specialConditions[0].type.descriptor) {
+                    specialDescriptor = jdata.specialConditions[0].type.descriptor;
+				}
+               
+                if (jdata.specialConditions && jdata.specialConditions[0].comment) {
+                    specialComment = jdata.specialConditions[0].comment;
+                }
+            
+                if (jdata.scheduleStartDate) {
+                    scheduleStartDate = jdata.scheduleStartDate;
+                }
+                
+                if (jdata.scheduleEndDate) {
+                    scheduleEndDate = jdata.scheduleEndDate;
+				}
+               
+                if (jdata.contractStartDate) {
+                    contractStartDate = jdata.contractStartDate;
+                }
+                
+                if (jdata.contractEndDate) {
+                    contractEndDate = jdata.contractEndDate;
+				}
+            
+                if (jdata.awardStatus && jdata.awardStatus.descriptor) {
+                    awardStatus = jdata.awardStatus.descriptor;
+				}
+            
+                if (jdata.descriptor) {
+                    name = jdata.descriptor;
+				}
+
+				tableHTML += "<tr><td>" + jdata.id + "</td><td>" + name + "</td>" +
+					"<td>" + scheduleStartDate + "</td><td>" + scheduleEndDate + "</td>" +
+                    "<td>" + contractStartDate + "</td><td>" + contractEndDate + "</td>" +
+                    "<td>" + lifecycleDescriptor + "</td><td>" + awardStatus + "</td>" +
+                    "<td>" + specialDescriptor + "</td><td>" + specialComment + "</td></tr>";
+
+            tableHTML += "</table>";
+            document.getElementById("pageData").innerHTML = tableHTML;
+            $("#prev").hide();
+		    $("#next").hide();
+            $("#awardLine").show();
+        }
+        return false;
+    }
+	
+	function getAllAwards()
+    {
+		var pageSize = sessionStorage.getItem('pagesize');
+		var curOffset = sessionStorage.getItem('curpage') * pageSize;
+		var href = sessionStorage.getItem('wdayUrl') + "/ccx/internalapi/finGrants/v1/super/awards?limit=" + pageSize + "&offset=" + curOffset;
+        if($("#awardStatus option:selected").val() != 'None')
+		{
+			href += "&awardStatus=" + $("#awardStatus option:selected").val();
+		}
+        if($( "#effectiveDate" ).val() != null && $( "#effectiveDate" ).val() != "")
+		{
+			href += "&effective=" + $("#effectiveDate").val();
+		}
+		var accessToken = sessionStorage.getItem('accessToken');
+
+		$.ajax(
+			{
+		        'type': 'GET',
+		        'url': href,
+			   'dataType':'json',
+		        headers: {
+				'Authorization': 'Bearer ' + accessToken,
+				'X-Tenant' : 'super',
+				'Content-Type' : 'text/xml; charset=UTF-8' },
+		        complete: function(xhr,data)
+			  	{
+			  		buildTableForAllAwards(xhr);
+		        }
+			});
+
+
+    	return false;
+	}
+
+	function buildTableForAllAwards(resObject)
+	{
+        console.log(resObject);
+        document.getElementById("lineData").innerHTML = "";
+		if(resObject.status != 200)
+		{
+			document.getElementById("pageData").innerHTML = "Error Fetching Awards:<br/>Status: " + resObject.status + " (" + resObject.statusText + ")<br/>" + resObject.responseText;
+    	}
+		else
+		{
+			var jdata = jQuery.parseJSON(resObject.responseText);
+            console.log(jdata);
+			var pageSize = sessionStorage.getItem('pagesize');
+    		var curPage = parseInt(sessionStorage.getItem('curpage')) + 1;
+			var m = jdata.total % pageSize;
+			var numPages = (jdata.total / pageSize) - (m / pageSize) + (m > 0 ? 1 : 0);
+			var lifecycleDescriptor, specialDescriptor, specialComment, scheduleStartDate, scheduleEndDate, contractStartDate, contractEndDate, awardStatus,name;
+			sessionStorage.setItem('numpages',numPages);
+
+			var tableHTML = "<table border=\"1\"><caption>Awards - Page: " + curPage + " of " + numPages + " (" + jdata.total + " total transactions)</caption><tr>" +
+				"<th>ID</th><th>Name</th><th>Start Date</th><th>End Date</th>" +
+				"<th>Contract Start Date</th><th>Contract End Date</th><th>LifeCycle Status</th><th>Award Status</th><th>Special Condition Type</th><th>Special Condition Comment</th></tr>";
+				
+			$.each(jdata.data, function(key, value)
+			{
+                lifecycleDescriptor = "";
+                specialComment = "";
+                specialDescriptor = "";
+                scheduleStartDate = jdata.data[key].scheduleStartDate != null ? jdata.data[key].scheduleStartDate : "";
+                scheduleEndDate = jdata.data[key].scheduleEndDate != null ? jdata.data[key].scheduleEndDate : "";
+                contractStartDate = jdata.data[key].contractStartDate != null ? jdata.data[key].contractStartDate : "";
+                contractEndDate = jdata.data[key].contractEndDate != null ? jdata.data[key].contractEndDate : "";
+                awardStatus = jdata.data[key].awardStatus.descriptor != null ? jdata.data[key].awardStatus.descriptor : "";
+                scheduleEndDate = jdata.data[key].scheduleEndDate != null ? jdata.data[key].scheduleEndDate : "";
+                name = jdata.data[key].name != undefined ? jdata.data[key].descriptor : jdata.data[key].descriptor;
+                
+                if (jdata.data[key].lifecycleStatus && jdata.data[key].lifecycleStatus.descriptor) {
+                    lifecycleDescriptor = jdata.data[key].lifecycleStatus.descriptor;
+                }
+                
+                if (jdata.data[key].specialConditions && jdata.data[key].specialConditions[0].type.descriptor) {
+                    specialDescriptor = jdata.data[key].specialConditions[0].type.descriptor;
+				}
+               
+                if (jdata.data[key].specialConditions && jdata.data[key].specialConditions[0].comment) {
+                    specialComment = jdata.data[key].specialConditions[0].comment;
+                }
+
+				tableHTML += "<tr><td>" + "<a href=\"#\" id=" + jdata.data[key].id + " onclick='onAwardClick(" + jdata.data[key].id + ")'>"+ jdata.data[key].id + "</a>" + "</td><td>" + name + "</td>" +
+					"<td>" + scheduleStartDate + "</td><td>" + scheduleEndDate + "</td>" +
+                    "<td>" + contractStartDate + "</td><td>" + contractEndDate + "</td>" +
+                    "<td>" + lifecycleDescriptor + "</td><td>" + awardStatus + "</td>" +
+                    "<td>" + specialDescriptor + "</td><td>" + specialComment + "</td></tr>";
+
+			});
+			tableHTML += "</table>";	// add next, prev links here
+    		var numPages = parseInt(sessionStorage.getItem('numpages')) - 1;
+    		if(curPage > numPages)
+    		{
+    			$("#next").hide();
+    		}
+    		else
+    		{
+   				$("#next").show();
+    		}
+    		if(curPage <= 1)
+    		{
+    			$("#prev").hide();
+    		}
+    		else
+    		{
+   				$("#prev").show();
+    		}
+			document.getElementById("pageData").innerHTML = tableHTML;
+            $("#awardLine").hide();
+		}
+		return false;
+	}
+
+    function buildTableForAwardLines(resObject)
+    {
+        if(resObject.status != 200)
+        {
+            document.getElementById("pageData").innerHTML = "Error Fetching Awards:<br/>Status: " + resObject.status + " (" + resObject.statusText + ")<br/>" + resObject.responseText;
+        }
+        else
+        {
+            var jdata = jQuery.parseJSON(resObject.responseText);
+            var pageSize = sessionStorage.getItem('pagesize');
+            var curPage = parseInt(sessionStorage.getItem('curpage')) + 1;
+            var m = jdata.total % pageSize;
+            var numPages = (jdata.total / pageSize) - (m / pageSize) + (m > 0 ? 1 : 0);
+            var lifecycleDescriptor, grantDescriptor,awardLineSpendRestriction,awardLineStartDate,awardLineEndDate,awardLineFARate;
+            sessionStorage.setItem('numpages',numPages);
+
+            var tableHTML = "<table border=\"1\"><caption>Award Lines - Page: " + curPage + " of " + numPages + " (" + jdata.total + " total transactions)</caption><tr>" +
+                "<th>ID</th><th>Name</th><th>From Date</th><th>To Date</th><th>Facilities and Administration Rate</th>" +
+                "<th>Spend Restriction</th><th>Lifecycle Status</th><th>Grant</th></tr>";
+
+            $.each(jdata.data, function(key, value)
+            {
+                lifecycleDescriptor = "";
+				grantDescriptor = "";
+                awardLineSpendRestriction = "";
+                awardLineStartDate = jdata.data[key].startDate != null ? jdata.data[key].startDate : "";
+                awardLineEndDate = jdata.data[key].endDate != null ? jdata.data[key].endDate : "";
+                awardLineFARate = jdata.data[key].facilitiesAndAdministrationRate != null ? jdata.data[key].facilitiesAndAdministrationRate : "";
+                
+                if (jdata.data[key].lifecycleStatus && jdata.data[key].lifecycleStatus.descriptor) {
+                    lifecycleDescriptor = jdata.data[key].lifecycleStatus.descriptor;
+                }
+                if (jdata.data[key].spendRestrictions && jdata.data[key].spendRestrictions[0].descriptor) {
+                    awardLineSpendRestriction = jdata.data[key].spendRestrictions[0].descriptor;
+                }
+                if (jdata.data[key].grant && jdata.data[key].grant.descriptor) {
+                    grantDescriptor = jdata.data[key].grant.descriptor;
+                }
+
+                tableHTML += "<tr><td>"+ jdata.data[key].id +"</td><td>" + jdata.data[key].descriptor + "</td>" +
+                    "<td>" + awardLineStartDate + "</td><td>" + awardLineEndDate + "</td>" +
+                    "<td>" + awardLineFARate + "</td><td>" + awardLineSpendRestriction + "</td>" +
+                    "<td>" + lifecycleDescriptor + "</td><td>" + grantDescriptor + "</td></tr>";
+
+            });
+            tableHTML += "</table>";
+            var numPages = parseInt(sessionStorage.getItem('numpages')) - 1;
+            if(curPage > numPages)
+            {
+                $("#next").hide();
+            }
+            else
+            {
+                $("#next").show();
+            }
+            if(curPage <= 1)
+            {
+                $("#prev").hide();
+            }
+            else
+            {
+                $("#prev").show();
+            }
+            $("#awardLine").hide();
+            document.getElementById("lineData").innerHTML = tableHTML;
+
+        }
+        return false;
+    }
+    </script>
+ 
+</html>
